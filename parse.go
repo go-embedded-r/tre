@@ -245,6 +245,13 @@ func (p *parseCtx) parseBracket() (*node, ErrCode) {
 		return nil, st
 	}
 	items := b.items
+	gid := 0
+	if p.c.rcompat {
+		gid = p.c.newGroup()
+		for _, it := range items {
+			it.posGroup = gid
+		}
+	}
 
 	// Sort the array if we need to negate it.
 	if negate {
@@ -302,6 +309,7 @@ func (p *parseCtx) parseBracket() (*node, ErrCode) {
 			return nil, ErrESpace
 		}
 		n.negClasses = copyNeg()
+		n.posGroup = gid
 		if result == nil {
 			result = n
 		} else {
@@ -1177,6 +1185,11 @@ func (p *parseCtx) literal(result **node, temporaryCflags *Flags) ErrCode {
 		tmp2 := c.newLiteral(int(toLower(ch)), int(toLower(ch)))
 		if tmp2 == nil {
 			return ErrESpace
+		}
+		if c.rcompat {
+			// both case variants share one position in R's copy
+			g := c.newGroup()
+			tmp1.posGroup, tmp2.posGroup = g, g
 		}
 		u := c.newUnion(tmp1, tmp2)
 		if u == nil {

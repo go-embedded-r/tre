@@ -51,6 +51,10 @@ type body struct {
 	class            ctype
 	negClasses       []ctype
 	position         int
+	// posGroup (RCompat only): literals with the same non-zero group share
+	// one NFA position, as the items of a bracket expression do in R's copy
+	// of TRE (upstream gives every item its own position).
+	posGroup int
 	// catenation and union
 	left, right *node
 	// iteration
@@ -98,6 +102,12 @@ type compiler struct {
 	stack    []stackItem
 	nodes    int
 	setItems int
+	groups   int
+}
+
+func (c *compiler) newGroup() int {
+	c.groups++
+	return c.groups
 }
 
 func (c *compiler) push(it stackItem) ErrCode {

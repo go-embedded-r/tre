@@ -39,6 +39,7 @@ type tnfa struct {
 	numStates     int
 	cflags        Flags
 	haveBackrefs  bool
+	rcompat       bool
 }
 
 type addTagsSym int
@@ -445,6 +446,7 @@ func (c *compiler) copyAST(ast *node, flags int, tagDirections []int, copy **nod
 	bottom := len(c.stack)
 	firstTag := true
 	result := copy
+	var groupMap map[int]int
 
 	c.pushNode(ast)
 	if st := c.pushInt(int(copyRecurse)); st != RegOK {
@@ -476,9 +478,26 @@ func (c *compiler) copyAST(ast *node, flags int, tagDirections []int, copy **nod
 					return ErrESpace
 				}
 				*result = r
+				if n.posGroup != 0 {
+					if groupMap == nil {
+						groupMap = map[int]int{}
+					}
+					g, ok := groupMap[n.posGroup]
+					if !ok {
+						g = c.newGroup()
+						groupMap[n.posGroup] = g
+					}
+					r.posGroup = g
+				}
 				if !isSpecial(&n.body) {
 					r.class = n.class
-					r.negClasses = n.negClasses
+					if !c.rcompat {
+						// R's copy of tre_copy_ast forgets the negated
+						// classes of a copied literal, so in wide mode
+						// [^[:space:]]{2} matches a space on its second
+						// repetition (R bug, reproduced for R).
+						r.negClasses = n.negClasses
+					}
 				}
 			case nUnion:
 				u := c.newUnion(n.left, n.right)
@@ -781,6 +800,7 @@ const (
 // computeNPFL computes `nullable', `position', `firstpos' and `lastpos' for
 // the nodes of the AST; nextpos is updated.
 func (c *compiler) computeNPFL(tree *node, nextpos *int) ErrCode {
+	groupPos := map[int]int{}
 	bottom := len(c.stack)
 	c.pushNode(tree)
 	if st := c.pushInt(int(nflRecurse)); st != RegOK {
@@ -816,8 +836,18 @@ func (c *compiler) computeNPFL(tree *node, nextpos *int) ErrCode {
 					// Literal at position i: nullable = false,
 					// firstpos = {i}, lastpos = {i}.
 					n.nullable = 0
-					n.position = *nextpos
-					*nextpos++
+					if g := n.posGroup; g != 0 {
+						if pos, ok := groupPos[g]; ok {
+							n.position = pos
+						} else {
+							n.position = *nextpos
+							*nextpos++
+							groupPos[g] = n.position
+						}
+					} else {
+						n.position = *nextpos
+						*nextpos++
+					}
 					n.firstpos = c.setOne(n.position, n.codeMin, n.codeMax, ctNone, nil, -1)
 					n.lastpos = c.setOne(n.position, n.codeMin, n.codeMax, n.class, n.negClasses, -1)
 					if n.firstpos == nil || n.lastpos == nil {
@@ -1056,7 +1086,7 @@ func (c *compiler) compile(re []rune, cflags Flags) (*tnfa, int, ErrCode) {
 		return nil, 0, ErrESubReg
 	}
 
-	t := &tnfa{}
+	t := &tnfa{rcompat: c.rcompat}
 	t.haveBackrefs = p.maxBackref >= 0
 	t.numSubmatches = p.submatchID
 

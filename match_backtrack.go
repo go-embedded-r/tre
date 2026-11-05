@@ -237,7 +237,15 @@ retry:
 				} else if matchEO < 0 {
 					// Try starting from a later position in the input
 					// string. Check for end of string.
-					if posStart >= n {
+					if t.rcompat {
+						// R's copy tests the current character, not the
+						// character at the start of this attempt, so a
+						// search that ends at the end of the subject does
+						// not retry from later start positions.
+						if ms.nextC == 0 {
+							break retry
+						}
+					} else if posStart >= n {
 						break retry
 					}
 					ms.nextC = nextCStart
