@@ -1,0 +1,152 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Shape follows go-embedded-r/r: OS lanes with -race, 32-bit, every GOOS
+# compiled, WebAssembly, govulncheck, short fuzz runs, bombs under a memory
+# limit, and the oracle lane, which builds upstream TRE as C at a pinned
+# commit and requires byte-for-byte equal offsets.
+env:
+  TRE_UPSTREAM_COMMIT: 71bfcaf0af3994384987c6c2679ed7d078ffe189
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - run: go version
+      - run: go vet ./...
+      - name: gofmt
+        if: matrix.os != 'windows-latest'
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - run: go build ./...
+      - name: Test (-race)
+        run: go test -race -timeout=30m ./...
+      - name: Bombs under a memory limit
+        if: matrix.os == 'ubuntu-latest'
+        run: ulimit -v 8000000 && GOMEMLIMIT=768MiB go test -count=1 -timeout=10m -run 'Bomb' .
+
+  arch-386:
+    name: arch 386 (+ vet arm)
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - run: |
+          GOARCH=386 go vet ./...
+          GOARCH=arm go vet ./...
+      - run: GOARCH=386 go test ./...
+
+  every-target:
+    name: compile on every target (${{ matrix.goos }})
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [aix, android, darwin, dragonfly, freebsd, illumos, ios, js, linux, netbsd, openbsd, plan9, solaris, wasip1, windows]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - name: Build every GOARCH of ${{ matrix.goos }}
+        shell: bash
+        run: |
+          fail=0
+          for t in $(go tool dist list | grep "^${{ matrix.goos }}/"); do
+            arch=${t#*/}
+            echo "== $t"
+            GOOS=${{ matrix.goos }} GOARCH=$arch go build . || { echo "::error::$t does not compile"; fail=1; }
+          done
+          exit $fail
+
+  wasm:
+    name: wasm (js + wasip1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - run: CGO_ENABLED=0 GOOS=js GOARCH=wasm go build .
+      - run: CGO_ENABLED=0 GOOS=wasip1 GOARCH=wasm go build .
+      - run: go install github.com/tetratelabs/wazero/cmd/wazero@v1.12.0
+      - name: Test under wazero
+        env:
+          GOWASIRUNTIME: wazero
+        run: |
+          export PATH="$(go env GOROOT)/lib/wasm:$(go env GOPATH)/bin:$PATH"
+          GOOS=wasip1 GOARCH=wasm go test .
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: "$(go env GOPATH)/bin/govulncheck ./..."
+
+  # A short run of the fuzz target (the corpus in testdata/fuzz is replayed by
+  # every `go test`).
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - run: go test -run '^$' -fuzz '^FuzzCompileExec$' -fuzztime 90s .
+
+  # The engine oracle: upstream TRE built as C. The recorded runs of TRE's own
+  # tests (tests/retest.c) and a differential fuzz must agree with the port
+  # byte for byte.
+  oracle:
+    name: oracle (upstream TRE, C)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: 1.27.2
+      - name: Fetch upstream TRE at the pinned commit
+        run: |
+          git init "$RUNNER_TEMP/tre-upstream"
+          git -C "$RUNNER_TEMP/tre-upstream" fetch --depth 1 https://github.com/laurikari/tre "$TRE_UPSTREAM_COMMIT"
+          git -C "$RUNNER_TEMP/tre-upstream" checkout FETCH_HEAD
+      - name: Build the C oracle and re-record TRE's own tests
+        run: |
+          mkdir "$RUNNER_TEMP/rec"
+          go run ./cmd/crefbuild -upstream "$RUNNER_TEMP/tre-upstream" -out "$RUNNER_TEMP/cbuild" -record "$RUNNER_TEMP/rec"
+          echo "TRE_C_HARNESS=$RUNNER_TEMP/cbuild/harness" >> "$GITHUB_ENV"
+      - name: TRE's own tests, replayed from the committed recordings
+        env:
+          TRE_REQUIRE_ORACLE: "1"
+        run: go test -count=1 -run 'TestRetest' -v .
+      - name: Differential fuzz against the C library
+        env:
+          TRE_REQUIRE_ORACLE: "1"
+          TRE_FUZZ_N: "400000"
+        run: go test -count=1 -run 'TestDifferential' -v -timeout 30m .

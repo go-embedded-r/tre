@@ -1,0 +1,4 @@
+go test fuzz v1
+string("((a|ab)*?)(b?)")
+string("abab")
+uint8(1)

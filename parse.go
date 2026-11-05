@@ -489,7 +489,7 @@ func (p *parseCtx) parseBound(result **node) ErrCode {
 	}
 
 	if approx || costsSet || countsSet {
-		return ErrBadPat // approximate matching is not ported
+		return ErrApprox // approximate matching is not ported
 	}
 
 	// Create the AST node(s).

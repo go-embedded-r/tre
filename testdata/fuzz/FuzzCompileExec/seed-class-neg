@@ -1,0 +1,4 @@
+go test fuzz v1
+string("[^[:alpha:][:digit:]]+")
+string("é1 -_")
+uint8(3)

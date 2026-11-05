@@ -33,6 +33,9 @@ const (
 	ErrBadMax
 	// ErrSteps is not a TRE code: the match exceeded Limits.MaxSteps.
 	ErrSteps
+	// ErrApprox is not a TRE code: the pattern uses TRE's approximate
+	// matching syntax ({~n}, {+n}, {1i+1d<2}), which is not ported.
+	ErrApprox
 )
 
 var errMessages = [...]string{
@@ -52,6 +55,7 @@ var errMessages = [...]string{
 	"Invalid use of repetition operators",
 	"Maximum repetition in {} larger than 255",
 	"Match step limit exceeded",
+	"Approximate matching syntax is not supported",
 }
 
 // Error returns the TRE message for the code.
