@@ -136,10 +136,13 @@ jobs:
           git init "$RUNNER_TEMP/tre-upstream"
           git -C "$RUNNER_TEMP/tre-upstream" fetch --depth 1 https://github.com/laurikari/tre "$TRE_UPSTREAM_COMMIT"
           git -C "$RUNNER_TEMP/tre-upstream" checkout FETCH_HEAD
-      - name: Build the C oracle and re-record TRE's own tests
+      # (The recordings of retest.c are made on macOS, where its wide variant
+      # finds the ISO-8859-1 locale it needs; on a runner without it upstream's
+      # wretest aborts in its own error path, so CI replays the committed
+      # recordings and does not re-record.)
+      - name: Build the C oracle
         run: |
-          mkdir "$RUNNER_TEMP/rec"
-          go run ./cmd/crefbuild -upstream "$RUNNER_TEMP/tre-upstream" -out "$RUNNER_TEMP/cbuild" -record "$RUNNER_TEMP/rec"
+          go run ./cmd/crefbuild -upstream "$RUNNER_TEMP/tre-upstream" -out "$RUNNER_TEMP/cbuild"
           echo "TRE_C_HARNESS=$RUNNER_TEMP/cbuild/harness" >> "$GITHUB_ENV"
       - name: TRE's own tests, replayed from the committed recordings
         env:
