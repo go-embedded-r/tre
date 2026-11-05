@@ -1,5 +1,7 @@
 package tre
 
+import "sync"
+
 // Port of tre-compile.c: tag insertion (tre_add_tags), AST expansion of
 // bounded repetition (tre_expand_ast), firstpos/lastpos computation
 // (tre_compute_npfl) and the conversion of the AST to a tagged NFA.
@@ -40,6 +42,7 @@ type tnfa struct {
 	cflags        Flags
 	haveBackrefs  bool
 	rcompat       bool
+	pools         [2]sync.Pool // scratch of the parallel matcher: no tags, tags
 }
 
 type addTagsSym int

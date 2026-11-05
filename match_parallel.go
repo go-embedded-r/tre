@@ -25,22 +25,23 @@ func (t *tnfa) runParallel(s []rune, matchTags []int, eflags EFlags, maxSteps in
 		numTags = t.numTags
 	}
 
-	// Temporary data required for matching.
+	// Temporary data required for matching, reused across calls.
 	ns := t.numStates
-	tagsBuf := make([]int, 2*ns*numTags)
-	reachA := make([]reachEntry, ns+1)
-	reachB := make([]reachEntry, ns+1)
-	for i := 0; i < ns; i++ {
-		reachA[i].tags = tagsBuf[(2*i)*numTags : (2*i+1)*numTags : (2*i+1)*numTags]
-		reachB[i].tags = tagsBuf[(2*i+1)*numTags : (2*i+2)*numTags : (2*i+2)*numTags]
-	}
-	reach, reachNext := reachA, reachB
+	sc := t.getScratch(numTags)
+	tmpTags := sc.tmp
+	// the tag slices are swapped between entries and tmpTags while matching:
+	// hand the one tmpTags ends with back, so that no slice is shared
+	defer func() {
+		sc.tmp = tmpTags
+		t.putScratch(sc, numTags)
+	}()
+	reach, reachNext := sc.reachA, sc.reachB
 	reachN, reachNextN := 0, 0
-	rpos := make([]reachPos, ns)
+	rpos := sc.rpos
 	for i := range rpos {
 		rpos[i].pos = -1
 	}
-	tmpTags := make([]int, numTags)
+	_ = ns
 
 	pos := -1
 	matchEO := -1
@@ -223,4 +224,39 @@ func (t *tnfa) runParallel(s []rune, matchTags []int, eflags EFlags, maxSteps in
 		return matchEO, RegOK
 	}
 	return -1, ErrNoMatch
+}
+
+// scratch is the working memory of one parallel match, pooled per tnfa and tag
+// count (with and without submatches the sizes differ).
+type scratch struct {
+	reachA, reachB []reachEntry
+	rpos           []reachPos
+	tmp            []int
+}
+
+func (t *tnfa) getScratch(numTags int) *scratch {
+	pool := &t.pools[0]
+	if numTags > 0 {
+		pool = &t.pools[1]
+	}
+	if v := pool.Get(); v != nil {
+		return v.(*scratch)
+	}
+	ns := t.numStates
+	sc := &scratch{reachA: make([]reachEntry, ns+1), reachB: make([]reachEntry, ns+1),
+		rpos: make([]reachPos, ns), tmp: make([]int, numTags)}
+	tagsBuf := make([]int, 2*ns*numTags)
+	for i := 0; i < ns; i++ {
+		sc.reachA[i].tags = tagsBuf[(2*i)*numTags : (2*i+1)*numTags : (2*i+1)*numTags]
+		sc.reachB[i].tags = tagsBuf[(2*i+1)*numTags : (2*i+2)*numTags : (2*i+2)*numTags]
+	}
+	return sc
+}
+
+func (t *tnfa) putScratch(sc *scratch, numTags int) {
+	pool := &t.pools[0]
+	if numTags > 0 {
+		pool = &t.pools[1]
+	}
+	pool.Put(sc)
 }
