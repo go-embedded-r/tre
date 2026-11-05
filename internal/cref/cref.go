@@ -51,7 +51,9 @@ func Build(upstream, here, out string) (*Bin, error) {
 	if upstream, err = filepath.Abs(upstream); err != nil {
 		return nil, err
 	}
-	inc := []string{"-O1", "-w", "-I", here, "-I", filepath.Join(upstream, "include"), "-I", filepath.Join(upstream, "lib")}
+	// tre-internal.h tests HAVE_WCTYPE_H before it includes tre.h (which
+	// includes the configuration): force the configuration in first.
+	inc := []string{"-O1", "-w", "-include", filepath.Join(here, "tre-config.h"), "-I", here, "-I", filepath.Join(upstream, "include"), "-I", filepath.Join(upstream, "lib")}
 	lib := func(f string) string { return filepath.Join(upstream, "lib", f) }
 	var libs []string
 	for _, f := range libFiles {
