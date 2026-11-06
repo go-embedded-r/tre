@@ -86,7 +86,10 @@ int main(void) {
       }
       free(wp); free(ws);
     } else {
-      rc = tre_regncompb(&re, (const char *)pb, pn, cflags);
+      /* tre_regncompb copies exactly n bytes without a terminating NUL and
+         the parser reads one past the end (heap over-read upstream): use the
+         NUL-terminating tre_regcompb, the pattern has no NUL. */
+      rc = tre_regcompb(&re, (const char *)pb, cflags);
       if (rc == 0) {
         rc = tre_regnexecb(&re, (const char *)sb, sn, nmatch, pm, eflags);
       }

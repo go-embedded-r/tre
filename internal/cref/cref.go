@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Bin is a set of built oracle binaries.
@@ -161,7 +162,11 @@ type Result struct {
 // characters) or 'b' (bytes).
 func (h *Harness) Do(mode byte, cflags, eflags, nmatch int, pattern, subject []byte) (Result, error) {
 	fmt.Fprintf(h.in, "%c %d %d %d %s %s\n", mode, cflags, eflags, nmatch, enc(pattern), enc(subject))
+	// a request the C library never answers (a hang) kills the harness: the
+	// caller counts it as "harness died" and restarts
+	timer := time.AfterFunc(20*time.Second, func() { h.cmd.Process.Kill() })
 	line, err := h.out.ReadString('\n')
+	timer.Stop()
 	if err != nil {
 		return Result{}, fmt.Errorf("harness died: %v", err)
 	}

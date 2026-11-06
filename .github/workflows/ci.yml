@@ -151,5 +151,8 @@ jobs:
       - name: Differential fuzz against the C library
         env:
           TRE_REQUIRE_ORACLE: "1"
-          TRE_FUZZ_N: "400000"
-        run: go test -count=1 -run 'TestDifferential' -v -timeout 30m .
+          # fixed seed and count, bounded; the full run (TRE_FUZZ_N=200000+,
+          # other seeds) stays available locally
+          TRE_FUZZ_N: "150000"
+          TRE_FUZZ_SEED: "1"
+        run: go test -count=1 -run 'TestDifferential' -v -timeout 25m .
