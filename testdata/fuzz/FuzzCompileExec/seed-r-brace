@@ -1,0 +1,4 @@
+go test fuzz v1
+string("a{,3}b{99999999999}")
+string("aaaab")
+uint8(1)
