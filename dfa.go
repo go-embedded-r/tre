@@ -16,7 +16,10 @@ import (
 // look at the consumed character. Characters above 255 are not tabled; a
 // subject that has one is answered by the NFA matcher.
 
-const dfaMaxStates = 2048
+const (
+	dfaMaxStates = 2048
+	dfaMaxItems  = 1 << 18 // NFA-state entries over all DFA states (2 MiB)
+)
 
 type dstate struct {
 	set    []int
@@ -27,6 +30,8 @@ type dstate struct {
 type dfaCache struct {
 	mu     sync.Mutex
 	ok     bool
+	items  int
+	full   atomic.Bool
 	start  *dstate
 	states map[string]*dstate
 }
@@ -84,9 +89,14 @@ func (t *tnfa) dfaIntern(set []int) *dstate {
 	if d, ok := t.dfa.states[string(key)]; ok {
 		return d
 	}
-	if len(t.dfa.states) >= dfaMaxStates {
+	// bounded in states and in total set size (a state of a big NFA holds
+	// many NFA states): at the cap the DFA is switched off for good and the
+	// NFA matcher answers
+	if len(t.dfa.states) >= dfaMaxStates || t.dfa.items+len(set) > dfaMaxItems {
+		t.dfa.full.Store(true)
 		return nil
 	}
+	t.dfa.items += len(set)
 	d := &dstate{set: set}
 	for _, v := range set {
 		if v == t.final {
@@ -131,7 +141,7 @@ func (t *tnfa) dfaStep(d *dstate, c rune) *dstate {
 // then runs the NFA matcher.
 func (t *tnfa) dfaMatchRunes(s []rune) (match, done bool) {
 	t.dfaInit()
-	if !t.dfa.ok {
+	if !t.dfa.ok || t.dfa.full.Load() {
 		return false, false
 	}
 	d := t.dfa.start
@@ -160,7 +170,7 @@ func (t *tnfa) dfaMatchRunes(s []rune) (match, done bool) {
 // subject in either mode).
 func (t *tnfa) dfaMatchBytes(s string) (match, done bool) {
 	t.dfaInit()
-	if !t.dfa.ok {
+	if !t.dfa.ok || t.dfa.full.Load() {
 		return false, false
 	}
 	d := t.dfa.start
