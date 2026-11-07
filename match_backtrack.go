@@ -67,18 +67,9 @@ func (t *tnfa) runBacktrack(s []rune, matchTags []int, eflags EFlags, maxSteps i
 	posStart := -1
 	var nextCStart rune
 
+	first := t.firstSet()
 retry:
 	for {
-		for i := 0; i < numTags; i++ {
-			tags[i] = -1
-			if matchTags != nil {
-				matchTags[i] = -1
-			}
-		}
-		for i := range statesSeen {
-			statesSeen[i] = false
-		}
-
 		state := -1
 		pos = posStart
 		getNext()
@@ -86,9 +77,25 @@ retry:
 		posStart = pos
 		nextCStart = ms.nextC
 
+		// A start position whose character no initial transition accepts
+		// cannot begin a match: skip the setup (the attempt would fail at
+		// once), as if every initial assertion had failed.
+		skip := first != nil && pos < n && ms.nextC >= 0 && !(ms.nextC < 256 && first.low[ms.nextC] || ms.nextC >= 256 && first.high)
+		if !skip {
+			for i := 0; i < numTags; i++ {
+				tags[i] = -1
+				if matchTags != nil {
+					matchTags[i] = -1
+				}
+			}
+			for i := range statesSeen {
+				statesSeen[i] = false
+			}
+		}
+
 		// Handle initial states.
 		var nextTags []int
-		for i := range t.initial {
+		for i := 0; i < len(t.initial) && !skip; i++ {
 			ti := &t.initial[i]
 			if ti.assertions != 0 && ms.failsAssertions(ti.assertions) {
 				continue
@@ -261,4 +268,39 @@ retry:
 		return matchEO, RegOK
 	}
 	return -1, ErrNoMatch
+}
+
+// firstChars is the set of code units some initial transition accepts.
+type firstChars struct {
+	low  [256]bool
+	high bool // some transition accepts a code unit above 255
+}
+
+// firstSet returns the characters a match can start with, or nil when that is
+// not known (the pattern can match the empty string, or an initial state is a
+// back reference).
+func (t *tnfa) firstSet() *firstChars {
+	t.firstOnce.Do(func() {
+		fc := &firstChars{}
+		for i := range t.initial {
+			st := t.initial[i].next - 1
+			if st == t.final {
+				return
+			}
+			for j := st; t.transitions[j].next != 0; j++ {
+				tr := &t.transitions[j]
+				if tr.assertions&assertBackref != 0 {
+					return
+				}
+				for c := tr.codeMin; c <= tr.codeMax && c < 256; c++ {
+					fc.low[c] = true
+				}
+				if tr.codeMax >= 256 {
+					fc.high = true
+				}
+			}
+		}
+		t.first = fc
+	})
+	return t.first
 }

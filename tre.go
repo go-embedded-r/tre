@@ -144,9 +144,19 @@ func (re *Regexp) HaveBackrefs() bool { return re.t.haveBackrefs }
 // subject does not match, ErrSteps when the step limit was exceeded.
 func (re *Regexp) Exec(s []rune, nmatch int, eflags EFlags) ([]Match, error) {
 	t := re.t
+	if nmatch == 0 && eflags&BacktrackingMatcher == 0 {
+		if m, done := t.dfaMatchRunes(s); done {
+			return re.verdict(m)
+		}
+	}
 	var tags []int
+	var tagBuf [32]int
 	if t.numTags > 0 && nmatch > 0 {
-		tags = make([]int, t.numTags)
+		if t.numTags <= len(tagBuf) {
+			tags = tagBuf[:t.numTags]
+		} else {
+			tags = make([]int, t.numTags)
+		}
 	}
 	var eo int
 	var st ErrCode
@@ -168,6 +178,11 @@ func (re *Regexp) Exec(s []rune, nmatch int, eflags EFlags) ([]Match, error) {
 // offsets are in characters. A subject that is not valid UTF-8 does not match
 // (TRE's mbrtowc failure).
 func (re *Regexp) ExecString(s string, nmatch int, eflags EFlags) ([]Match, error) {
+	if nmatch == 0 && eflags&BacktrackingMatcher == 0 && (re.flags&UseBytes != 0 || isASCII(s)) {
+		if m, done := re.t.dfaMatchBytes(s); done {
+			return re.verdict(m)
+		}
+	}
 	if re.flags&UseBytes != 0 {
 		return re.Exec(decode(s, true), nmatch, eflags)
 	}
@@ -181,4 +196,20 @@ func (re *Regexp) ExecString(s string, nmatch int, eflags EFlags) ([]Match, erro
 func (re *Regexp) MatchString(s string) bool {
 	_, err := re.ExecString(s, 0, 0)
 	return err == nil
+}
+
+func (re *Regexp) verdict(m bool) ([]Match, error) {
+	if m {
+		return []Match{}, nil
+	}
+	return nil, ErrNoMatch
+}
+
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
