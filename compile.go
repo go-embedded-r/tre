@@ -178,6 +178,11 @@ func (c *compiler) addTags(tree *node, t *tnfa, firstPass bool) ErrCode {
 					}
 					t.submatchData[id].parents = nil
 					if i > 0 {
+						// the parent lists of nested groups are quadratic in
+						// the nesting depth: bound their total
+						if !c.countSet(i) {
+							return ErrESpace
+						}
 						p := make([]int, i)
 						copy(p, parents[:i])
 						t.submatchData[id].parents = p

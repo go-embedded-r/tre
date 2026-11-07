@@ -6,16 +6,19 @@ import (
 	"testing"
 )
 
+// bombPeakBudget is the most memory the runtime may take from the OS while
+// the DFA bomb runs (Sys after minus Sys before, a high-water mark): a wasm32
+// heap, go-notebook's playground, must stay far below its 4 GiB.
+
 // TestBombDFA: (a|b)*a(a|b){20}c has a DFA of 2^20 states. The lazy DFA must
 // stay within its caps (dfaMaxStates, dfaMaxItems) and hand over to the NFA
-// matcher with the answer unchanged. CI runs it with the other bombs under
-// GOMEMLIMIT and ulimit -v.
+// matcher with the answer unchanged, within bombPeakBudget on every target.
 func TestBombDFA(t *testing.T) {
-	if runtime.GOARCH == "wasm" {
-		// wazero's linear memory is already near its limit after the other
-		// bombs; the cap itself is asserted by every other platform
-		t.Skip("wasm")
-	}
+	defer checkPeak(t)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+
 	re, err := Compile(`(a|b)*a(a|b){20}c`, Extended)
 	if err != nil {
 		t.Fatal(err)
@@ -45,5 +48,13 @@ func TestBombDFA(t *testing.T) {
 		if (a == nil) != (b == nil) {
 			t.Fatalf("DFA/NFA disagree on %q", string(x))
 		}
+	}
+
+	runtime.ReadMemStats(&after)
+	peak := int64(after.Sys) - int64(before.Sys)
+	t.Logf("peak growth of the runtime's memory: %d KiB (budget %d KiB), DFA %d states, %d items",
+		peak>>10, bombPeakBudget>>10, len(d.states), d.items)
+	if peak > bombPeakBudget {
+		t.Fatalf("peak memory %d MiB over the budget of %d MiB", peak>>20, bombPeakBudget>>20)
 	}
 }
