@@ -40,14 +40,14 @@ type Limits struct {
 	// TRE_MAX_RE).
 	MaxPattern int
 	// MaxNodes bounds the AST nodes, including those created by expanding
-	// bounded repetition (default 1<<20).
+	// bounded repetition (default 1<<17).
 	MaxNodes int
 	// MaxStates bounds the positions (NFA states) (default 1<<19).
 	MaxStates int
-	// MaxTransitions bounds the NFA transitions (default 1<<23).
+	// MaxTransitions bounds the NFA transitions (default 1<<19).
 	MaxTransitions int
 	// MaxSetItems bounds the entries of all firstpos/lastpos sets, whose
-	// size can be quadratic in the pattern (default 1<<23).
+	// size can be quadratic in the pattern (default 1<<17).
 	MaxSetItems int
 	// MaxSteps bounds the work of one match: transitions examined by the
 	// parallel matcher, loop iterations and transitions by the backtracking
@@ -55,10 +55,10 @@ type Limits struct {
 	MaxSteps int
 }
 
-func (l Limits) maxNodes() int       { return def(l.MaxNodes, 1<<20) }
+func (l Limits) maxNodes() int       { return def(l.MaxNodes, 1<<17) }
 func (l Limits) maxStates() int      { return def(l.MaxStates, 1<<19) }
-func (l Limits) maxTransitions() int { return def(l.MaxTransitions, 1<<23) }
-func (l Limits) maxSetItems() int    { return def(l.MaxSetItems, 1<<23) }
+func (l Limits) maxTransitions() int { return def(l.MaxTransitions, 1<<19) }
+func (l Limits) maxSetItems() int    { return def(l.MaxSetItems, 1<<17) }
 func (l Limits) maxPattern() int     { return def(l.MaxPattern, defaultMaxPatternLen) }
 func (l Limits) maxSteps() int {
 	if l.MaxSteps < 0 {

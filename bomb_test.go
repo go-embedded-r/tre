@@ -23,16 +23,19 @@ func mustRefuse(t *testing.T, name, pattern string, flags Flags, want ErrCode) {
 }
 
 func TestBombPatternTooLong(t *testing.T) {
+	defer checkPeak(t)
 	mustRefuse(t, "70000 literals", strings.Repeat("a", 70000), Extended, ErrESpace)
 }
 
 func TestBombNestedRepetition(t *testing.T) {
+	defer checkPeak(t)
 	// ((((a{255}){255}){255}){255}) expands to 255^4 copies.
 	mustRefuse(t, "nested counts", "((((a{255}){255}){255}){255})", Extended, ErrESpace)
 	mustRefuse(t, "union of nested counts", "(((a{255}|b){255}|c){255}|d){255}", Extended, ErrESpace)
 }
 
 func TestBombQuadraticSets(t *testing.T) {
+	defer checkPeak(t)
 	// a?^n a^n: the firstpos/lastpos sets grow quadratically.
 	n := 30000
 	mustRefuse(t, "a?^n", strings.Repeat("a?", n), Extended, ErrESpace)
@@ -40,6 +43,7 @@ func TestBombQuadraticSets(t *testing.T) {
 }
 
 func TestBombDeepNesting(t *testing.T) {
+	defer checkPeak(t)
 	// 30000 nested groups: the parser's explicit stack must hold, the
 	// result is either a program or a refusal, never a stack overflow.
 	p := strings.Repeat("(", 30000) + "a" + strings.Repeat(")", 30000)
@@ -50,6 +54,7 @@ func TestBombDeepNesting(t *testing.T) {
 }
 
 func TestBombBacktrackingSteps(t *testing.T) {
+	defer checkPeak(t)
 	// A back reference forces the exhaustive backtracking matcher: on this
 	// input it is exponential. The step limit must refuse it.
 	re, err := CompileOptions(`(a*)*\1b`, Options{Flags: Extended, Limits: Limits{MaxSteps: 1 << 22}})
@@ -67,6 +72,7 @@ func TestBombBacktrackingSteps(t *testing.T) {
 }
 
 func TestBombDefaultStepLimit(t *testing.T) {
+	defer checkPeak(t)
 	// With default limits the same input is refused too (bounded time).
 	re, err := Compile(`(a|aa)+\1$`, Extended)
 	if err != nil {
@@ -83,6 +89,7 @@ func TestBombDefaultStepLimit(t *testing.T) {
 }
 
 func TestBombLargeSubject(t *testing.T) {
+	defer checkPeak(t)
 	// A large subject is linear for the parallel matcher.
 	re, err := Compile(`(a|b)*c`, Extended)
 	if err != nil {
