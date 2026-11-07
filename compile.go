@@ -43,6 +43,8 @@ type tnfa struct {
 	haveBackrefs  bool
 	rcompat       bool
 	pools         [2]sync.Pool // scratch of the parallel matcher: no tags, tags
+	firstOnce     sync.Once
+	first         *firstChars
 	dfaOnce       sync.Once
 	dfa           dfaCache
 }

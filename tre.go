@@ -150,8 +150,13 @@ func (re *Regexp) Exec(s []rune, nmatch int, eflags EFlags) ([]Match, error) {
 		}
 	}
 	var tags []int
+	var tagBuf [32]int
 	if t.numTags > 0 && nmatch > 0 {
-		tags = make([]int, t.numTags)
+		if t.numTags <= len(tagBuf) {
+			tags = tagBuf[:t.numTags]
+		} else {
+			tags = make([]int, t.numTags)
+		}
 	}
 	var eo int
 	var st ErrCode
